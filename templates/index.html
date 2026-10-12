@@ -1,0 +1,70 @@
+import requests
+
+API_BASE = "https://api.frankfurter.app"
+SUPPORTED_CURRENCIES = [
+    "AUD", "CAD", "CHF", "CNY", "CZK", "DKK", "EUR", "GBP", "HKD", "HUF",
+    "INR", "JPY", "KES", "NGN", "NOK", "NZD", "PLN", "SEK", "SGD", "USD",
+    "ZAR"
+]
+
+
+class FXService:
+    def get_market_snapshot(self):
+        try:
+            response = requests.get(f"{API_BASE}/latest", timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            rates = data.get("rates", {})
+            filtered_rates = {code: rates.get(code) for code in SUPPORTED_CURRENCIES if code in rates}
+
+            return {
+                "base_currency": data.get("base", "EUR"),
+                "date": data.get("date", "today"),
+                "rates": filtered_rates,
+                "supported_currencies": SUPPORTED_CURRENCIES,
+            }
+        except requests.RequestException as exc:
+            raise ValueError(f"Unable to fetch current FX market data: {exc}") from exc
+
+    def convert_currency(self, amount, from_currency, to_currency):
+        from_currency = (from_currency or "").upper()
+        to_currency = (to_currency or "").upper()
+
+        if not from_currency or not to_currency:
+            raise ValueError("from_currency and to_currency are required.")
+
+        if from_currency == to_currency:
+            return {
+                "amount": amount,
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "converted_amount": amount,
+                "rate": 1.0,
+                "date": "today",
+            }
+
+        try:
+            response = requests.get(
+                f"{API_BASE}/latest?from={from_currency}&to={to_currency}",
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            raise ValueError(f"Unable to fetch rate for {from_currency} to {to_currency}: {exc}") from exc
+
+        rate = data.get("rates", {}).get(to_currency)
+        if rate is None:
+            raise ValueError(f"No exchange rate available for {from_currency} to {to_currency}.")
+
+        converted_amount = amount * rate
+
+        return {
+            "amount": amount,
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+            "converted_amount": round(converted_amount, 4),
+            "rate": rate,
+            "date": data.get("date", "today"),
+        }
